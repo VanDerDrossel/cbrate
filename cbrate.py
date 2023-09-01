@@ -1,33 +1,55 @@
+import xml.etree.ElementTree as E  # https://docs.python.org/3/library/xml.etree.elementtree.html
+
 import requests
-from xml.dom.minidom import parseString
 
 
-class ValCurs:
-    """docstring for ValCurs"""
-
-    def __init__(self, date, num_code, char_code, nominal, name, value):
-        self.date = date
-        self.num_code = num_code
-        self.char_code = char_code
-        self.nominal = nominal
-        self.name = name
-        self.value = value
+URL = "https://www.cbr.ru/scripts/XML_daily.asp"
 
 
-def get_quotes(code: str) -> ValCurs:
-    """CharCode"""
-    url = 'https://www.cbr.ru/scripts/XML_daily.asp'
-    response = requests.get(url)
-    dom = parseString(response.text)
-    for char_tag in dom.getElementsByTagName("CharCode"):
-        char_code = char_tag.firstChild.data
-        if char_code == code.upper():
-            date = dom.firstChild.getAttribute("Date")
-            found = char_tag.parentNode
-            num_code = found.childNodes[0].firstChild.data
-            char_code = found.childNodes[1].firstChild.data
-            nominal = found.childNodes[2].firstChild.data
-            name = found.childNodes[3].firstChild.data
-            value = float(found.childNodes[4].firstChild.data.replace(',', '.'))
-            val_curs = ValCurs(date, num_code, char_code, nominal, name, value)
-            return val_curs
+def get_raw_xml() -> str:
+    response = requests.get(URL).text
+    return response
+
+
+def parsing_xml(raw_xml: str) -> list:
+    # parses XML from a string 
+    root = E.fromstring(raw_xml)
+    
+    # Meta information from first parent node
+    meta_information = {root.tag: root.attrib}
+    
+    # Create list of dict
+    valute = []
+    for child in root:
+        node = {i.tag: i.text for i in child}
+        valute.append(node)
+        
+    return [meta_information, valute]
+
+
+def get_val_curs(print_meta=False, add_date=True, format_value=True) -> list:
+    raw_xml = get_raw_xml()
+    meta, valute = parsing_xml(raw_xml)
+    
+    if print_meta:
+        print(meta)
+        
+    if add_date:
+        for val in valute:
+            val["Date"] = meta["ValCurs"]["Date"]
+    
+    if format_value:
+        for val in valute:
+            val['Nominal'] = float(val['Nominal'])
+            val['Value'] = float(val['Value'].replace(',', '.'))
+    
+    return valute
+
+
+def filtred_by_char_code(data:list, *char_codes:str) -> list:
+    """filter by Alphabetic code.
+    ISO 4217. https://ru.wikipedia.org/wiki/ISO_4217
+    """
+    key_name = 'CharCode'
+    res = [i for i in data for k,v in i.items() if v in char_codes and k==key_name]
+    return res
